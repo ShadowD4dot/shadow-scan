@@ -226,7 +226,7 @@ class ShadowScanner:
         return []
     
     def run_nuclei(self, targets: List[str], severity: str = "critical,high,medium") -> List[Dict]:
-        """Ejecutar nuclei para detectar vulnerabilidades"""
+        """Ejecutar nuclei para detectar vulnerabilidades con reintentos automáticos"""
         print(f"\n🎯 [3/3] Escaneando vulnerabilidades (severity: {severity})...")
         
         if not targets:
@@ -253,31 +253,38 @@ class ShadowScanner:
         
         output_file = self.scan_dir / "vulnerabilities.json"
         
-        try:
-            cmd = [
-                'nuclei',
-                '-l', str(targets_file),
-                '-severity', severity,
-                '-jsonl',
-                '-o', str(output_file),
-                '-silent',
-                '-c', '50',
-                '-timeout', '10',
-                '-retries', '1'
-            ]
-            
-            subprocess.run(cmd, check=True, timeout=1800)
-            
-            # Leer resultados
-            if output_file.exists():
+        # Reintentos automáticos para errores de conexión
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                cmd = [
+                    'nuclei',
+                    '-l', str(targets_file),
+                    '-severity', severity,
+                    '-jsonl',
+                    '-o', str(output_file),
+                    '-silent',
+                    '-c', '20',
+                    '-timeout', '15',
+                    '-retries', '2',
+                    '-max-host-error', '20',
+                    '-rate-limit', '100'
+                ]
+                
+                subprocess.run(cmd, check=True, timeout=1800)
+                
+                # Leer resultados
                 vulnerabilities = []
-                with open(output_file) as f:
-                    for line in f:
-                        if line.strip():
-                            try:
-                                vulnerabilities.append(json.loads(line))
-                            except json.JSONDecodeError:
-                                continue
+                if output_file.exists():
+                    with open(output_file) as f:
+                        for line in f:
+                            if line.strip():
+                                try:
+                                    vulnerabilities.append(json.loads(line))
+                                except json.JSONDecodeError:
+                                    continue
                 
                 self.results['vulnerabilities'] = vulnerabilities
                 
@@ -294,10 +301,24 @@ class ShadowScanner:
                 
                 return vulnerabilities
                 
-        except subprocess.TimeoutExpired:
-            print("   ⚠️  Nuclei timeout - usando resultados parciales")
-        except Exception as e:
-            print(f"   ❌ Error en nuclei: {e}")
+            except subprocess.TimeoutExpired:
+                print("   ⚠️  Nuclei timeout - usando resultados parciales")
+                break
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Reintentar solo para errores de conexión
+                if any(keyword in error_msg for keyword in ['unreachable', 'refused', 'timeout', 'connection']):
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        print(f"   🔄 Error de conexión detectado. Reintentando ({retry_count}/{max_retries-1})...")
+                        import time
+                        time.sleep(5 * retry_count)  # Incrementar delay con cada reintento
+                        continue
+                    else:
+                        print(f"   ❌ Error persistente en nuclei después de {max_retries} intentos: {e}")
+                else:
+                    print(f"   ❌ Error en nuclei: {e}")
+                break
         
         return []
     

@@ -91,60 +91,81 @@ def run_direct_scan(target: str, severity: str = "critical,high,medium"):
         print(f"   ❌ Error en httpx: {e}")
         return
     
-    # Escanear con Nuclei
+    # Escanear con Nuclei (con reintentos automáticos)
     print(f"\n🎯 [2/2] Escaneando vulnerabilidades (severity: {severity})...")
     
     nuclei_output = scan_dir / "vulnerabilities.json"
     target_url = alive_hosts[0]['url']
     
-    try:
-        cmd = [
-            'nuclei',
-            '-u', target_url,
-            '-severity', severity,
-            '-jsonl',
-            '-o', str(nuclei_output),
-            '-silent',
-            '-c', '50',
-            '-timeout', '10'
-        ]
-        
-        subprocess.run(cmd, check=True, timeout=1800)
-        
-        # Leer vulnerabilidades
-        vulnerabilities = []
-        if nuclei_output.exists():
-            with open(nuclei_output) as f:
-                for line in f:
-                    if line.strip():
-                        try:
-                            vulnerabilities.append(json.loads(line))
-                        except:
-                            pass
-        
-        # Estadísticas
-        from collections import defaultdict
-        severity_counts = defaultdict(int)
-        
-        for vuln in vulnerabilities:
-            sev = vuln.get('info', {}).get('severity', 'unknown')
-            severity_counts[sev] += 1
-        
-        print(f"   ✅ {len(vulnerabilities)} vulnerabilidades detectadas")
-        
-        if vulnerabilities:
-            for sev in ['critical', 'high', 'medium', 'low']:
-                if sev in severity_counts:
-                    count = severity_counts[sev]
-                    emoji = {'critical': '🔴', 'high': '🟠', 'medium': '🟡', 'low': '🟢'}.get(sev, '⚪')
-                    print(f"      {emoji} {sev.upper()}: {count}")
-        
-    except subprocess.TimeoutExpired:
-        print("   ⚠️  Nuclei timeout - usando resultados parciales")
-        vulnerabilities = []
-    except Exception as e:
-        print(f"   ❌ Error en nuclei: {e}")
-        vulnerabilities = []
+    max_retries = 3
+    retry_count = 0
+    vulnerabilities = []
+    
+    while retry_count < max_retries:
+        try:
+            cmd = [
+                'nuclei',
+                '-u', target_url,
+                '-severity', severity,
+                '-jsonl',
+                '-o', str(nuclei_output),
+                '-silent',
+                '-c', '20',
+                '-timeout', '15',
+                '-retries', '2',
+                '-max-host-error', '20',
+                '-rate-limit', '100'
+            ]
+            
+            subprocess.run(cmd, check=True, timeout=1800)
+            
+            # Leer vulnerabilidades
+            if nuclei_output.exists():
+                with open(nuclei_output) as f:
+                    for line in f:
+                        if line.strip():
+                            try:
+                                vulnerabilities.append(json.loads(line))
+                            except:
+                                pass
+            
+            # Estadísticas
+            from collections import defaultdict
+            severity_counts = defaultdict(int)
+            
+            for vuln in vulnerabilities:
+                sev = vuln.get('info', {}).get('severity', 'unknown')
+                severity_counts[sev] += 1
+            
+            print(f"   ✅ {len(vulnerabilities)} vulnerabilidades detectadas")
+            
+            if vulnerabilities:
+                for sev in ['critical', 'high', 'medium', 'low']:
+                    if sev in severity_counts:
+                        count = severity_counts[sev]
+                        emoji = {'critical': '🔴', 'high': '🟠', 'medium': '🟡', 'low': '🟢'}.get(sev, '⚪')
+                        print(f"      {emoji} {sev.upper()}: {count}")
+            
+            break  # Éxito, salir del loop
+            
+        except subprocess.TimeoutExpired:
+            print("   ⚠️  Nuclei timeout - usando resultados parciales")
+            break
+        except Exception as e:
+            error_msg = str(e).lower()
+            # Reintentar solo para errores de conexión
+            if any(keyword in error_msg for keyword in ['unreachable', 'refused', 'timeout', 'connection']):
+                retry_count += 1
+                if retry_count < max_retries:
+                    print(f"   🔄 Error de conexión detectado. Reintentando ({retry_count}/{max_retries-1})...")
+                    import time
+                    time.sleep(5 * retry_count)
+                    continue
+                else:
+                    print(f"   ❌ Error persistente en nuclei después de {max_retries} intentos: {e}")
+            else:
+                print(f"   ❌ Error en nuclei: {e}")
+            break
     
     # Crear reporte
     report = {
