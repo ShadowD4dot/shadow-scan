@@ -258,7 +258,7 @@ class ShadowScanner:
                 'nuclei',
                 '-l', str(targets_file),
                 '-severity', severity,
-                '-json',
+                '-jsonl',
                 '-o', str(output_file),
                 '-silent',
                 '-c', '50',

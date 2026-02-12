@@ -102,7 +102,7 @@ def run_direct_scan(target: str, severity: str = "critical,high,medium"):
             'nuclei',
             '-u', target_url,
             '-severity', severity,
-            '-json',
+            '-jsonl',
             '-o', str(nuclei_output),
             '-silent',
             '-c', '50',
