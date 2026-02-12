@@ -37,7 +37,7 @@ Sistema completo de reconocimiento (OSINT/Recon) que combina las mejores herrami
 
 ```bash
 # 1. Clonar repositorio (o descargar archivos)
-git clone https://github.com/ShadowD4dot/shadow-scan.git
+git clone https://github.com/tu-usuario/shadow-scan.git
 cd shadow-scan
 
 # 2. Ejecutar instalación automatizada
@@ -395,7 +395,7 @@ python3 dashboard.py
 
 ¿Problemas? Abre un issue en GitHub o contacta:
 
-- 📧 Email:d4dot@proton.me
+- 📧 Email: security@example.com
 - 🐦 Twitter: @shadowscan
 - 💬 Discord: ShadowScan Community
 

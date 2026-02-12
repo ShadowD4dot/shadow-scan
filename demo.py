@@ -10,6 +10,8 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 import random
+from urllib.parse import urlparse
+import re
 
 # Importar el notificador de Telegram
 try:
@@ -19,15 +21,41 @@ except ImportError:
     print("⚠️  telegram_notifier.py no encontrado, modo demo sin Telegram")
 
 
+def extract_domain(target: str) -> str:
+    """Extraer dominio limpio de una URL"""
+    if '://' in target:
+        parsed = urlparse(target)
+        domain = parsed.netloc or parsed.path
+    else:
+        domain = target.replace('http:', '').replace('https:', '')
+        domain = domain.strip('/')
+    
+    domain = domain.split('/')[0]
+    domain = domain.split(':')[0]
+    
+    return domain.strip()
+
+def sanitize_dirname(name: str) -> str:
+    """Sanitizar nombre para directorios"""
+    invalid_chars = r'[<>:"/\\|?*\s]'
+    sanitized = re.sub(invalid_chars, '_', name)
+    sanitized = sanitized.strip('._')
+    return sanitized
+
+
 class DemoScanner:
     """Escáner de demostración con datos simulados"""
     
     def __init__(self, target: str, output_dir: str = "demo_results"):
-        self.target = target
+        self.original_target = target
+        self.target = extract_domain(target)
+        
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         
-        self.scan_dir = self.output_dir / f"{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        safe_dirname = sanitize_dirname(self.target)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.scan_dir = self.output_dir / f"{safe_dirname}_{timestamp}"
         self.scan_dir.mkdir(exist_ok=True)
     
     def generate_demo_subdomains(self) -> list:

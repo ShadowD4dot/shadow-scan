@@ -9,7 +9,7 @@ import argparse
 from pathlib import Path
 
 # Importar módulos
-from shadow_scan import ShadowScanner
+from shadow_scan import ShadowScanner, extract_domain, sanitize_dirname
 from telegram_notifier import TelegramNotifier, TelegramConfig
 
 

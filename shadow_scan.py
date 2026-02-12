@@ -15,6 +15,8 @@ import argparse
 from dataclasses import dataclass, asdict
 import sqlite3
 from collections import defaultdict
+from urllib.parse import urlparse
+import re
 
 @dataclass
 class ScanResult:
@@ -26,16 +28,62 @@ class ScanResult:
     vulnerabilities: List[Dict]
     stats: Dict
 
+def extract_domain(target: str) -> str:
+    """
+    Extraer dominio limpio de una URL o string
+    
+    Ejemplos:
+        https://example.com -> example.com
+        http://sub.example.com/path -> sub.example.com
+        example.com -> example.com
+    """
+    # Si contiene protocolo, parsear como URL
+    if '://' in target:
+        parsed = urlparse(target)
+        domain = parsed.netloc or parsed.path
+    else:
+        # Remover http/https si está presente sin ://
+        domain = target.replace('http:', '').replace('https:', '')
+        # Remover barras
+        domain = domain.strip('/')
+    
+    # Limpiar cualquier path restante
+    domain = domain.split('/')[0]
+    
+    # Limpiar puerto si existe
+    domain = domain.split(':')[0]
+    
+    return domain.strip()
+
+def sanitize_dirname(name: str) -> str:
+    """
+    Sanitizar nombre para crear directorios válidos
+    Reemplaza caracteres inválidos por guiones bajos
+    """
+    # Remover caracteres inválidos para nombres de archivos/directorios
+    invalid_chars = r'[<>:"/\\|?*\s]'
+    sanitized = re.sub(invalid_chars, '_', name)
+    
+    # Remover puntos al inicio o final
+    sanitized = sanitized.strip('._')
+    
+    return sanitized
+
 class ShadowScanner:
     """Motor principal del escáner"""
     
     def __init__(self, target: str, output_dir: str = "scan_results"):
-        self.target = target
+        # Extraer y limpiar el dominio
+        self.original_target = target
+        self.target = extract_domain(target)
+        
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         
-        # Directorio específico para este escaneo
-        self.scan_dir = self.output_dir / f"{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Directorio específico para este escaneo (con nombre sanitizado)
+        safe_dirname = sanitize_dirname(self.target)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.scan_dir = self.output_dir / f"{safe_dirname}_{timestamp}"
         self.scan_dir.mkdir(exist_ok=True)
         
         self.results = {
@@ -87,20 +135,41 @@ class ShadowScanner:
             subprocess.run(cmd, check=True, timeout=300)
             
             # Leer resultados
+            subdomains = []
             if output_file.exists():
                 with open(output_file) as f:
                     subdomains = [line.strip() for line in f if line.strip()]
+            
+            # Si no se encontraron subdominios, incluir el dominio principal
+            if not subdomains:
+                print(f"   ⚠️  No se encontraron subdominios públicos")
+                print(f"   💡 Incluyendo dominio principal: {self.target}")
+                subdomains = [self.target]
                 
-                self.results['subdomains'] = subdomains
-                print(f"   ✅ Encontrados {len(subdomains)} subdominios")
-                return subdomains
+                # Guardar en archivo
+                with open(output_file, 'w') as f:
+                    f.write(self.target + '\n')
+            
+            self.results['subdomains'] = subdomains
+            print(f"   ✅ Total de targets: {len(subdomains)}")
+            if len(subdomains) > 1:
+                print(f"      → {len(subdomains) - 1} subdominios + 1 dominio principal")
+            
+            return subdomains
             
         except subprocess.TimeoutExpired:
-            print("   ⚠️  Subfinder timeout - usando resultados parciales")
+            print("   ⚠️  Subfinder timeout - usando dominio principal")
+            subdomains = [self.target]
+            with open(output_file, 'w') as f:
+                f.write(self.target + '\n')
+            return subdomains
         except Exception as e:
             print(f"   ❌ Error en subfinder: {e}")
-        
-        return []
+            print(f"   💡 Continuando con dominio principal: {self.target}")
+            subdomains = [self.target]
+            with open(output_file, 'w') as f:
+                f.write(self.target + '\n')
+            return subdomains
     
     def run_httpx(self, targets: List[str]) -> List[Dict]:
         """Ejecutar httpx para verificar hosts activos"""
