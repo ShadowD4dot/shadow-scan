@@ -395,9 +395,9 @@ python3 dashboard.py
 
 ¿Problemas? Abre un issue en GitHub o contacta:
 
-- 📧 Email: security@example.com
-- 🐦 Twitter: @shadowscan
-- 💬 Discord: ShadowScan Community
+- 📧 Email: d4dot@proton.me    
+- 🐦 NAO-web:naosoc.io            
+- 💬 soporte:ventas@naosoc.io
 
 ---
 
